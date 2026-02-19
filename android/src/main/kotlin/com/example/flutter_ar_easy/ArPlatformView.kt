@@ -1,6 +1,8 @@
 package com.example.flutter_ar_easy
 
+import android.Manifest
 import android.app.Activity
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.net.Uri
@@ -15,6 +17,7 @@ import com.google.ar.core.HitResult
 import com.google.ar.core.Plane
 import com.google.ar.core.Session
 import com.google.ar.core.TrackingState
+import com.google.ar.core.ArCoreApk
 import com.google.ar.sceneform.AnchorNode
 import com.google.ar.sceneform.ArSceneView
 import com.google.ar.sceneform.Node
@@ -23,6 +26,8 @@ import com.google.ar.sceneform.math.Vector3
 import com.google.ar.sceneform.rendering.MaterialFactory
 import com.google.ar.sceneform.rendering.ModelRenderable
 import com.google.ar.sceneform.rendering.ShapeFactory
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import io.flutter.FlutterInjector
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.EventChannel
@@ -65,6 +70,11 @@ class ArPlatformView(
     private var showDebugPlanes = false
     private var planeDetectionMode = 0
     private var isInitialized = false
+    private var arCoreInstallRequested = false
+
+    companion object {
+        private const val CAMERA_PERMISSION_REQUEST_CODE = 9042
+    }
 
     init {
         methodChannel = MethodChannel(messenger, "flutter_ar_easy/ar_view_$viewId")
@@ -106,6 +116,37 @@ class ArPlatformView(
 
     private fun initialize(call: MethodCall, result: MethodChannel.Result) {
         try {
+            if (!hasCameraPermission()) {
+                ActivityCompat.requestPermissions(
+                    activity,
+                    arrayOf(Manifest.permission.CAMERA),
+                    CAMERA_PERMISSION_REQUEST_CODE
+                )
+
+                result.error(
+                    "PERMISSION_DENIED",
+                    "Camera permission is required. Grant permission and open AR again.",
+                    null
+                )
+                sendEvent("sessionStateChanged", mapOf("state" to 5))
+                return
+            }
+
+            val installStatus = ArCoreApk.getInstance().requestInstall(
+                activity,
+                !arCoreInstallRequested
+            )
+            if (installStatus == ArCoreApk.InstallStatus.INSTALL_REQUESTED) {
+                arCoreInstallRequested = true
+                result.error(
+                    "ARCORE_INSTALL_REQUIRED",
+                    "Google Play Services for AR is required. Complete installation and reopen AR.",
+                    null
+                )
+                sendEvent("sessionStateChanged", mapOf("state" to 5))
+                return
+            }
+
             val args = call.arguments as? Map<*, *> ?: emptyMap<String, Any>()
             showDebugPlanes = args["showDebugPlanes"] as? Boolean ?: false
             planeDetectionMode = asInt(args["planeDetection"], 0)
@@ -116,10 +157,17 @@ class ArPlatformView(
             sendEvent("sessionStateChanged", mapOf("state" to 2))
         } catch (e: Exception) {
             result.error("INIT_ERROR", e.message, null)
+            sendEvent("sessionStateChanged", mapOf("state" to 5))
         }
     }
 
     private fun setupArSceneView() {
+        arSceneView?.pause()
+        arSceneView?.session?.close()
+        arSceneView?.destroy()
+        arSceneView = null
+        frameLayout.removeAllViews()
+
         arSceneView = ArSceneView(activity).apply {
             layoutParams = FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
@@ -145,8 +193,10 @@ class ArPlatformView(
             session.configure(config)
             sceneView.setupSession(session)
         } catch (e: Exception) {
-            sendEvent("sessionStateChanged", mapOf("state" to 5))
-            return
+            throw IllegalStateException(
+                "Failed to start AR session: ${e.message ?: "unknown error"}",
+                e
+            )
         }
 
         sceneView.scene.addOnUpdateListener {
@@ -192,6 +242,13 @@ class ArPlatformView(
         }
 
         sceneView.resume()
+    }
+
+    private fun hasCameraPermission(): Boolean {
+        return ContextCompat.checkSelfPermission(
+            activity,
+            Manifest.permission.CAMERA
+        ) == PackageManager.PERMISSION_GRANTED
     }
 
     private fun prepareModel(call: MethodCall, result: MethodChannel.Result) {

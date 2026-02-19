@@ -1,4 +1,5 @@
 import ARKit
+import AVFoundation
 import CryptoKit
 import Flutter
 import Foundation
@@ -154,6 +155,24 @@ final class ArPlatformView: NSObject, FlutterPlatformView {
     }
 
     let args = call.arguments as? [String: Any] ?? [:]
+    ensureCameraAccess { granted in
+      guard granted else {
+        result(
+          FlutterError(
+            code: "PERMISSION_DENIED",
+            message: "Camera permission is required. Grant access and open AR again.",
+            details: nil
+          )
+        )
+        self.sendEvent(type: "sessionStateChanged", data: ["state": 5])
+        return
+      }
+
+      self.startSession(with: args, result: result)
+    }
+  }
+
+  private func startSession(with args: [String: Any], result: @escaping FlutterResult) {
     showDebugPlanes = boolValue(args["showDebugPlanes"], fallback: false)
     planeDetectionMode = intValue(args["planeDetection"], fallback: 0)
     lightEstimation = boolValue(args["lightEstimation"], fallback: true)
@@ -604,6 +623,24 @@ final class ArPlatformView: NSObject, FlutterPlatformView {
       )
     )
     return false
+  }
+
+  private func ensureCameraAccess(_ completion: @escaping (Bool) -> Void) {
+    let status = AVCaptureDevice.authorizationStatus(for: .video)
+    switch status {
+    case .authorized:
+      completion(true)
+    case .notDetermined:
+      AVCaptureDevice.requestAccess(for: .video) { granted in
+        DispatchQueue.main.async {
+          completion(granted)
+        }
+      }
+    case .denied, .restricted:
+      completion(false)
+    @unknown default:
+      completion(false)
+    }
   }
 
   private func loadModelNode(
