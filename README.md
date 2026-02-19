@@ -186,9 +186,10 @@ Phase 2 (Current) ✅
  Remote model loading with disk caching
  Tap-to-place model placement support
  `loadModel()` + `placeModel()` preload/placement workflow
-Phase 3
- iOS ARKit integration
- Cross-platform API unification
+Phase 3 (Current) ✅
+ iOS ARKit platform view integration
+ Unified method/event channel API on Android + iOS
+ iOS model loading, tap-to-place, and cache support
 Phase 4
  Gestures (rotate, scale, move)
  Snapshot/screenshot
@@ -198,9 +199,9 @@ Phase 5
  Image tracking
  Persistent anchors
 🐛 Known Issues
-Android Only: iOS support coming in Phase 3
-Model Loading: Best support is currently GLB/GLTF; large models can still impact frame rate.
-ARCore Devices: Requires ARCore supported device
+iOS Model Formats: Best support on iOS is currently USDZ/SCN/DAE/OBJ.
+Model Performance: Large models can still impact frame rate on both platforms.
+AR Device Support: Android requires ARCore-capable devices, iOS requires ARKit support.
 🤝 Contributing
 Contributions welcome! Please read CONTRIBUTING.md.
 

@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ArController.placeModelAtScreenPosition()` for tap-based placement.
 - Remote model caching on Android with hashed cache files.
 - `ArController.clearModelCache()` and native cache clearing support.
+- ARKit-based iOS platform view implementation for `ArView`.
+- iOS method/event channel handlers for model placement, tap placement, and node/session lifecycle.
+- iOS remote model caching and cache clearing support.
+- iOS example app camera permission and model viewer demo support.
 
 ### Fixed
 - Android plugin namespace alignment (`com.example.flutter_ar_easy`) for reliable plugin registration.
