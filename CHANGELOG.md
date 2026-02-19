@@ -16,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - iOS method/event channel handlers for model placement, tap placement, and node/session lifecycle.
 - iOS remote model caching and cache clearing support.
 - iOS example app camera permission and model viewer demo support.
+- `ArModelViewer` two-finger model rotation and scaling gestures.
+- Android native `takeSnapshot` implementation (PixelCopy-based).
+- Example app AR snapshot preview flow.
 
 ### Fixed
 - Android plugin namespace alignment (`com.example.flutter_ar_easy`) for reliable plugin registration.

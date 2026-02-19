@@ -14,6 +14,8 @@ Wraps ARCore (Android) and ARKit (iOS) with a unified Dart API, making it simple
 - ✅ **Primitive Shapes** - Built-in cubes, spheres, cylinders
 - ✅ **3D Model Support** - Load GLB, GLTF, USDZ models
 - ✅ **Prebuilt Widgets** - Ready-to-use AR viewer components
+- ✅ **Model Gestures** - Rotate and scale placed models
+- ✅ **Snapshots** - Capture AR screenshots on Android and iOS
 - ✅ **Debug Mode** - Visualize detected planes and feature points
 - ✅ **Lifecycle Management** - Handles pause/resume automatically
 
@@ -190,10 +192,11 @@ Phase 3 (Current) ✅
  iOS ARKit platform view integration
  Unified method/event channel API on Android + iOS
  iOS model loading, tap-to-place, and cache support
-Phase 4
- Gestures (rotate, scale, move)
- Snapshot/screenshot
- Occlusion
+Phase 4 (In Progress)
+ ✅ Gestures (rotate, scale)
+ ✅ Snapshot/screenshot
+ ⏳ Move gestures
+ ⏳ Occlusion
 Phase 5
  Face tracking
  Image tracking

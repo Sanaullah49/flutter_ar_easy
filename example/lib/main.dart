@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_ar_easy/flutter_ar_easy.dart';
 
@@ -212,6 +214,47 @@ class _BasicArDemoState extends State<BasicArDemo> {
     setState(() => _nodeCount = 0);
   }
 
+  Future<void> _takeSnapshot() async {
+    if (_controller == null) return;
+
+    try {
+      final bytes = await _controller!.takeSnapshot();
+      if (!mounted || bytes == null || bytes.isEmpty) return;
+
+      final imageBytes = Uint8List.fromList(bytes);
+      await showDialog<void>(
+        context: context,
+        builder: (context) {
+          return Dialog(
+            backgroundColor: Colors.black87,
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'AR Snapshot',
+                    style: TextStyle(color: Colors.white, fontSize: 16),
+                  ),
+                  const SizedBox(height: 12),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Image.memory(imageBytes),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Snapshot error: $e')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -271,6 +314,13 @@ class _BasicArDemoState extends State<BasicArDemo> {
                   onPressed: _clearAll,
                   backgroundColor: Colors.redAccent,
                   child: const Icon(Icons.delete),
+                ),
+                const SizedBox(width: 24),
+                FloatingActionButton(
+                  heroTag: 'snapshot',
+                  onPressed: _takeSnapshot,
+                  backgroundColor: Colors.white24,
+                  child: const Icon(Icons.camera_alt),
                 ),
                 const SizedBox(width: 32),
                 FloatingActionButton.large(

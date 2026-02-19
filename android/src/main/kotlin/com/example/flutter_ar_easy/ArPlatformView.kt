@@ -1,8 +1,12 @@
 package com.example.flutter_ar_easy
 
 import android.app.Activity
+import android.graphics.Bitmap
 import android.graphics.Color
 import android.net.Uri
+import android.os.Handler
+import android.os.HandlerThread
+import android.view.PixelCopy
 import android.view.View
 import android.widget.FrameLayout
 import com.google.ar.core.Config
@@ -33,6 +37,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
+import java.io.ByteArrayOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
@@ -93,6 +98,7 @@ class ArPlatformView(
             "removeNode" -> removeNode(call, result)
             "removeAllNodes" -> removeAllNodes(result)
             "updateNode" -> updateNode(call, result)
+            "takeSnapshot" -> takeSnapshot(result)
             "dispose" -> disposeAr(result)
             else -> result.notImplemented()
         }
@@ -558,6 +564,49 @@ class ArPlatformView(
             result.success(null)
         } catch (e: Exception) {
             result.error("DISPOSE_ERROR", e.message, null)
+        }
+    }
+
+    private fun takeSnapshot(result: MethodChannel.Result) {
+        val sceneView = arSceneView
+        if (sceneView == null) {
+            result.error("SNAPSHOT_ERROR", "AR view is not available", null)
+            return
+        }
+
+        if (sceneView.width <= 0 || sceneView.height <= 0) {
+            result.error("SNAPSHOT_ERROR", "AR view has invalid dimensions", null)
+            return
+        }
+
+        val bitmap = Bitmap.createBitmap(
+            sceneView.width,
+            sceneView.height,
+            Bitmap.Config.ARGB_8888
+        )
+
+        val handlerThread = HandlerThread("flutter_ar_easy_pixel_copy").apply { start() }
+        val handler = Handler(handlerThread.looper)
+
+        activity.runOnUiThread {
+            PixelCopy.request(sceneView, bitmap, { copyResult ->
+                try {
+                    if (copyResult == PixelCopy.SUCCESS) {
+                        val outputStream = ByteArrayOutputStream()
+                        bitmap.compress(Bitmap.CompressFormat.PNG, 100, outputStream)
+                        result.success(outputStream.toByteArray())
+                    } else {
+                        result.error(
+                            "SNAPSHOT_ERROR",
+                            "PixelCopy failed with code: $copyResult",
+                            null
+                        )
+                    }
+                } finally {
+                    bitmap.recycle()
+                    handlerThread.quitSafely()
+                }
+            }, handler)
         }
     }
 
