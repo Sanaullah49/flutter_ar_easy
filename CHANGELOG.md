@@ -1,0 +1,26 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [0.1.0] - 2026-02-19
+
+### Added
+- Initial release
+- ARCore Android support
+- Horizontal plane detection
+- Primitive shapes (cube, sphere, cylinder)
+- `ArView` widget for camera feed
+- `ArController` for scene management
+- `ArModelViewer` prebuilt widget
+- Debug plane visualization
+- Automatic lifecycle management (pause/resume)
+- Event streaming (plane detected, session state, node tapped)
+- Support checking (`ArController.isArSupported()`)
+- Example app with 2 demos
+
+### Known Limitations
+- Android only (iOS coming in v0.3.0)
+- Primitives only (3D models coming in v0.2.0)
