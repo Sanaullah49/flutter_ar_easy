@@ -15,13 +15,13 @@ import kotlin.test.Test
 
 internal class FlutterArEasyPluginTest {
     @Test
-    fun onMethodCall_getPlatformVersion_returnsExpectedValue() {
+    fun onMethodCall_isArSupported_withoutContext_returnsFalse() {
         val plugin = FlutterArEasyPlugin()
 
-        val call = MethodCall("getPlatformVersion", null)
+        val call = MethodCall("isArSupported", null)
         val mockResult: MethodChannel.Result = Mockito.mock(MethodChannel.Result::class.java)
         plugin.onMethodCall(call, mockResult)
 
-        Mockito.verify(mockResult).success("Android " + android.os.Build.VERSION.RELEASE)
+        Mockito.verify(mockResult).success(false)
     }
 }

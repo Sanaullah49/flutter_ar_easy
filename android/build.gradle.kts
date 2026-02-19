@@ -1,3 +1,5 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
 group = "com.example.flutter_ar_easy"
 version = "1.0-SNAPSHOT"
 
@@ -21,22 +23,29 @@ allprojects {
     }
 }
 
+configurations.configureEach {
+    exclude(group = "com.android.support")
+}
+
 plugins {
     id("com.android.library")
     id("kotlin-android")
 }
 
+kotlin {
+    compilerOptions {
+        jvmTarget.set(JvmTarget.JVM_17)
+    }
+}
+
 android {
 
+    namespace = "com.example.flutter_ar_easy"
     compileSdk = 36
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
-    }
-
-    kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_17.toString()
     }
 
     sourceSets {
@@ -53,7 +62,7 @@ android {
     }
 
     buildFeatures {
-        viewBinding true
+        viewBinding = true
     }
 
 

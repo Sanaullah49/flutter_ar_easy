@@ -76,6 +76,8 @@ class ArModelViewer extends StatefulWidget {
 class _ArModelViewerState extends State<ArModelViewer> {
   ArController? _controller;
   bool _modelPlaced = false;
+  bool _isModelLoaded = false;
+  bool _isPreparingModel = false;
   String? _statusMessage;
 
   ArSource get _source {
@@ -92,39 +94,81 @@ class _ArModelViewerState extends State<ArModelViewer> {
   void _onArCreated(ArController controller) {
     _controller = controller;
 
-    controller.onPlaneDetected = (plane) {
+    controller.onPlaneDetected = (_) {
       if (!mounted) return;
+      if (_modelPlaced || !_isModelLoaded) return;
       setState(() {
-        _statusMessage = 'Plane detected! Tap to place model.';
+        _statusMessage = widget.enableTapToPlace
+            ? 'Plane detected! Tap to place model.'
+            : 'Plane detected. Placing model...';
       });
     };
 
-    if (widget.enableTapToPlace) {
-      _enableTapPlacement();
-    } else {
-      _autoPlaceModel();
+    _prepareModel();
+  }
+
+  Future<void> _prepareModel() async {
+    final controller = _controller;
+    if (controller == null || _isPreparingModel || _isModelLoaded) return;
+
+    if (!mounted) return;
+    setState(() {
+      _isPreparingModel = true;
+      _statusMessage = 'Loading model...';
+    });
+
+    try {
+      await controller.loadModel(source: _source, scale: widget.initialScale);
+      if (!mounted) return;
+      setState(() {
+        _isModelLoaded = true;
+        _statusMessage = widget.enableTapToPlace
+            ? 'Move your device to detect a surface...'
+            : 'Model loaded. Placing model...';
+      });
+
+      if (!widget.enableTapToPlace) {
+        await _autoPlaceModel();
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _statusMessage = null);
+      widget.onError?.call(e.toString());
+    } finally {
+      if (mounted) {
+        setState(() => _isPreparingModel = false);
+      }
     }
   }
 
-  void _enableTapPlacement() {
-    if (!mounted) return;
-    setState(() {
-      _statusMessage = 'Move your device to detect a surface...';
-    });
-
-    _controller?.onNodeTapped = (nodeId) {
-      // Handle node tap for rotation/scaling in future phases
-    };
-  }
-
   Future<void> _autoPlaceModel() async {
-    if (_controller == null || _modelPlaced) return;
+    if (_controller == null || _modelPlaced || !_isModelLoaded) return;
 
     try {
       final node = await _controller!.placeModel(
-        source: _source,
-        scale: ArScale.uniform(widget.initialScale),
         position: const ArPosition(x: 0, y: 0, z: -1.5),
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _modelPlaced = true;
+        _statusMessage = null;
+      });
+
+      widget.onModelPlaced?.call(node);
+    } catch (e) {
+      widget.onError?.call(e.toString());
+    }
+  }
+
+  Future<void> _handleTapToPlace(TapUpDetails details) async {
+    final controller = _controller;
+    if (controller == null || _modelPlaced || !_isModelLoaded) return;
+
+    try {
+      final node = await controller.placeModelAtScreenPosition(
+        screenX: details.localPosition.dx,
+        screenY: details.localPosition.dy,
       );
 
       if (!mounted) return;
@@ -154,6 +198,14 @@ class _ArModelViewerState extends State<ArModelViewer> {
           unsupportedWidget: widget.unsupportedWidget,
           onError: (error) => widget.onError?.call(error.message),
         ),
+
+        if (widget.enableTapToPlace && !_modelPlaced)
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onTapUp: _handleTapToPlace,
+            ),
+          ),
 
         // Status overlay
         if (_statusMessage != null)
@@ -193,7 +245,12 @@ class _ArModelViewerState extends State<ArModelViewer> {
                   onTap: () async {
                     await _controller?.removeAllNodes();
                     if (!mounted) return;
-                    setState(() => _modelPlaced = false);
+                    setState(() {
+                      _modelPlaced = false;
+                      _statusMessage = widget.enableTapToPlace
+                          ? 'Tap to place model.'
+                          : null;
+                    });
                   },
                 ),
                 const SizedBox(height: 12),
@@ -203,8 +260,15 @@ class _ArModelViewerState extends State<ArModelViewer> {
                   onTap: () async {
                     await _controller?.removeAllNodes();
                     if (!mounted) return;
-                    setState(() => _modelPlaced = false);
-                    _autoPlaceModel();
+                    setState(() {
+                      _modelPlaced = false;
+                      _statusMessage = widget.enableTapToPlace
+                          ? 'Tap to place model.'
+                          : null;
+                    });
+                    if (!widget.enableTapToPlace) {
+                      _autoPlaceModel();
+                    }
                   },
                 ),
               ],

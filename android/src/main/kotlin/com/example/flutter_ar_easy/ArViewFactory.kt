@@ -1,4 +1,4 @@
-package com.fluttareasy.flutter_ar_easy
+package com.example.flutter_ar_easy
 
 import android.app.Activity
 import android.content.Context

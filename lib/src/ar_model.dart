@@ -87,6 +87,15 @@ class ArSource {
   ModelFormat get format => path.detectedFormat;
 
   Map<String, dynamic> toMap() => {'type': type.index, 'path': path};
+
+  factory ArSource.fromMap(Map<dynamic, dynamic> map) {
+    return ArSource._(
+      ArSourceType.values[map['type'] as int? ?? 0],
+      map['path'] as String? ?? '',
+    );
+  }
+
+  const ArSource._(this.type, this.path);
 }
 
 /// Represents a node (object) in the AR scene.
@@ -129,6 +138,7 @@ class ArNode {
     return ArNode(
       id: map['id'] as String?,
       objectType: ArObjectType.values[map['objectType'] as int? ?? 0],
+      source: map['source'] != null ? ArSource.fromMap(map['source']) : null,
       position: map['position'] != null
           ? ArPosition.fromMap(map['position'])
           : const ArPosition(),
@@ -138,6 +148,9 @@ class ArNode {
       scale: map['scale'] != null
           ? ArScale.fromMap(map['scale'])
           : const ArScale.uniform(1.0),
+      properties: Map<String, dynamic>.from(
+        map['properties'] as Map<dynamic, dynamic>? ?? const {},
+      ),
     );
   }
 }

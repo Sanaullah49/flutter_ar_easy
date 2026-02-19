@@ -111,6 +111,18 @@ class _HomeScreenState extends State<HomeScreen> {
                 MaterialPageRoute(builder: (_) => const PrimitivesDemo()),
               ),
             ),
+
+            const SizedBox(height: 16),
+
+            _buildDemoButton(
+              icon: Icons.chair_alt,
+              title: 'Model Viewer',
+              subtitle: 'GLB from URL + tap-to-place',
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ModelViewerDemo()),
+              ),
+            ),
           ],
         ),
       ),
@@ -495,6 +507,53 @@ class _PrimitivesDemoState extends State<PrimitivesDemo> {
 
                   SizedBox(height: MediaQuery.of(context).padding.bottom),
                 ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Model Viewer Demo ─────────────────────────────────────
+
+class ModelViewerDemo extends StatelessWidget {
+  const ModelViewerDemo({super.key});
+
+  static const _demoModelUrl =
+      'https://storage.googleapis.com/ar-answers-in-search-models/static/GiantPanda/model.glb';
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Stack(
+        children: [
+          ArModelViewer(
+            modelPath: _demoModelUrl,
+            sourceType: ArSourceType.url,
+            enableTapToPlace: true,
+            initialScale: 0.8,
+            showDebugPlanes: true,
+            onModelPlaced: (_) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Model placed successfully')),
+              );
+            },
+            onError: (error) {
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(SnackBar(content: Text('Error: $error')));
+            },
+          ),
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 8,
+            left: 16,
+            child: CircleAvatar(
+              backgroundColor: Colors.black54,
+              child: IconButton(
+                icon: const Icon(Icons.arrow_back, color: Colors.white),
+                onPressed: () => Navigator.pop(context),
               ),
             ),
           ),

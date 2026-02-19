@@ -13,6 +13,18 @@ typedef ArSessionStateCallback = void Function(ArSessionState state);
 typedef ArErrorCallback = void Function(ArException error);
 typedef ArNodeTappedCallback = void Function(String nodeId);
 
+class _LoadedModel {
+  const _LoadedModel({
+    required this.source,
+    required this.scale,
+    required this.cacheRemoteModel,
+  });
+
+  final ArSource source;
+  final ArScale scale;
+  final bool cacheRemoteModel;
+}
+
 /// Main controller for AR interactions.
 ///
 /// This controller manages the AR session, handles model loading/placement,
@@ -25,6 +37,7 @@ class ArController {
   ArSessionState _state = ArSessionState.uninitialized;
   final List<ArNode> _nodes = [];
   final List<ArPlane> _detectedPlanes = [];
+  _LoadedModel? _loadedModel;
 
   // Callbacks
   ArPlaneDetectedCallback? onPlaneDetected;
@@ -53,6 +66,7 @@ class ArController {
   bool get isReady =>
       _state == ArSessionState.ready || _state == ArSessionState.tracking;
   int get nodeCount => _nodes.length;
+  bool get hasLoadedModel => _loadedModel != null;
 
   // ─── Session Management ────────────────────────────────────
 
@@ -151,28 +165,118 @@ class ArController {
 
   /// Place a model from an [ArSource].
   Future<ArNode> placeModel({
-    required ArSource source,
+    ArSource? source,
     ArPosition position = const ArPosition(),
     ArRotation rotation = const ArRotation(),
-    ArScale scale = const ArScale.uniform(1.0),
+    ArScale? scale,
+    bool? cacheRemoteModel,
   }) async {
     _ensureReady();
 
+    final loadedModel = _loadedModel;
+    final resolvedSource = source ?? loadedModel?.source;
+    if (resolvedSource == null) {
+      throw const ArModelException(
+        'No model source provided. Call loadModel() or pass source explicitly.',
+      );
+    }
+
+    final resolvedScale =
+        scale ?? loadedModel?.scale ?? const ArScale.uniform(1.0);
+    final shouldCacheRemote =
+        cacheRemoteModel ?? loadedModel?.cacheRemoteModel ?? true;
+
     final node = ArNode(
       objectType: ArObjectType.model,
-      source: source,
+      source: resolvedSource,
       position: position,
       rotation: rotation,
-      scale: scale,
+      scale: resolvedScale,
     );
 
     try {
-      await _channel.invokeMethod('placeModel', node.toMap());
+      final payload = Map<String, dynamic>.from(node.toMap())
+        ..['source'] = _sourceToMap(resolvedSource, shouldCacheRemote);
+      await _channel.invokeMethod('placeModel', payload);
       _nodes.add(node);
       return node;
     } on PlatformException catch (e) {
       throw ArModelException(
-        e.message ?? 'Failed to place model: ${source.path}',
+        e.message ?? 'Failed to place model: ${resolvedSource.path}',
+      );
+    }
+  }
+
+  /// Preload a model so placement is immediate when user taps.
+  Future<void> loadModel({
+    required ArSource source,
+    double scale = 1.0,
+    bool cacheRemoteModel = true,
+  }) async {
+    _ensureReady();
+
+    try {
+      await _channel.invokeMethod('prepareModel', {
+        'source': _sourceToMap(source, cacheRemoteModel),
+      });
+
+      _loadedModel = _LoadedModel(
+        source: source,
+        scale: ArScale.uniform(scale),
+        cacheRemoteModel: cacheRemoteModel,
+      );
+    } on PlatformException catch (e) {
+      throw ArModelException(
+        e.message ?? 'Failed to preload model: ${source.path}',
+      );
+    }
+  }
+
+  /// Place a model at a specific point on the screen.
+  Future<ArNode> placeModelAtScreenPosition({
+    required double screenX,
+    required double screenY,
+    ArSource? source,
+    ArScale? scale,
+    bool? cacheRemoteModel,
+  }) async {
+    _ensureReady();
+
+    final loadedModel = _loadedModel;
+    final resolvedSource = source ?? loadedModel?.source;
+    if (resolvedSource == null) {
+      throw const ArModelException(
+        'No model source provided. Call loadModel() or pass source explicitly.',
+      );
+    }
+
+    final resolvedScale =
+        scale ?? loadedModel?.scale ?? const ArScale.uniform(1.0);
+    final shouldCacheRemote =
+        cacheRemoteModel ?? loadedModel?.cacheRemoteModel ?? true;
+
+    final node = ArNode(
+      objectType: ArObjectType.model,
+      source: resolvedSource,
+      scale: resolvedScale,
+    );
+
+    try {
+      final result = await _channel
+          .invokeMethod<Map<dynamic, dynamic>>('placeModelAtScreen', {
+            'id': node.id,
+            'source': _sourceToMap(resolvedSource, shouldCacheRemote),
+            'scale': resolvedScale.toMap(),
+            'screenX': screenX,
+            'screenY': screenY,
+          });
+
+      final placedNode = result != null ? ArNode.fromMap(result) : node;
+      _nodes.add(placedNode);
+      return placedNode;
+    } on PlatformException catch (e) {
+      throw ArModelException(
+        e.message ?? 'Failed to place model at tap location',
       );
     }
   }
@@ -182,15 +286,23 @@ class ArController {
     required ArObjectType type,
     ArSource? source,
     ArScale scale = const ArScale.uniform(0.1),
+    double? screenX,
+    double? screenY,
+    bool cacheRemoteModel = true,
   }) async {
     _ensureReady();
 
     try {
-      final result = await _channel.invokeMethod<Map>('enableTapToPlace', {
-        'objectType': type.index,
-        'source': source?.toMap(),
-        'scale': scale.toMap(),
-      });
+      final result = await _channel
+          .invokeMethod<Map<dynamic, dynamic>>('placeOnTap', {
+            'objectType': type.index,
+            'source': source != null
+                ? _sourceToMap(source, cacheRemoteModel)
+                : null,
+            'scale': scale.toMap(),
+            'screenX': screenX,
+            'screenY': screenY,
+          });
 
       if (result != null) {
         final node = ArNode.fromMap(result);
@@ -200,6 +312,16 @@ class ArController {
       return null;
     } on PlatformException catch (e) {
       throw ArModelException(e.message ?? 'Failed to enable tap placement');
+    }
+  }
+
+  /// Delete all cached remote model files downloaded by this plugin.
+  Future<void> clearModelCache() async {
+    _ensureNotDisposed();
+    try {
+      await _channel.invokeMethod('clearModelCache');
+    } on PlatformException catch (e) {
+      throw ArModelException(e.message ?? 'Failed to clear model cache');
     }
   }
 
@@ -339,7 +461,13 @@ class ArController {
     } finally {
       _nodes.clear();
       _detectedPlanes.clear();
+      _loadedModel = null;
       _updateState(ArSessionState.disposed);
     }
+  }
+
+  Map<String, dynamic> _sourceToMap(ArSource source, bool cacheRemoteModel) {
+    return Map<String, dynamic>.from(source.toMap())
+      ..['cacheRemoteModel'] = cacheRemoteModel;
   }
 }

@@ -181,11 +181,11 @@ Phase 1 (Current) ✅
  Primitive shapes (cube, sphere, cylinder)
  Debug visualization
  Lifecycle management
-Phase 2 (Next)
- Load 3D models (GLB/GLTF)
- Remote model loading with caching
- Hit testing (tap-to-place)
- Model download progress
+Phase 2 (Current) ✅
+ Load 3D models (GLB/GLTF/asset/file/url)
+ Remote model loading with disk caching
+ Tap-to-place model placement support
+ `loadModel()` + `placeModel()` preload/placement workflow
 Phase 3
  iOS ARKit integration
  Cross-platform API unification
@@ -199,7 +199,7 @@ Phase 5
  Persistent anchors
 🐛 Known Issues
 Android Only: iOS support coming in Phase 3
-Model Loading: Only primitives supported in Phase 1. Model loading in Phase 2.
+Model Loading: Best support is currently GLB/GLTF; large models can still impact frame rate.
 ARCore Devices: Requires ARCore supported device
 🤝 Contributing
 Contributions welcome! Please read CONTRIBUTING.md.
@@ -218,4 +218,3 @@ ARKit by Apple
 💬 Discussions
 📧 Email: your@email.com
 Made with ❤️ for the Flutter community
-
