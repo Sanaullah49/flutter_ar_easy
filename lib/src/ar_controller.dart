@@ -12,6 +12,7 @@ typedef ArPlaneDetectedCallback = void Function(ArPlane plane);
 typedef ArSessionStateCallback = void Function(ArSessionState state);
 typedef ArErrorCallback = void Function(ArException error);
 typedef ArNodeTappedCallback = void Function(String nodeId);
+typedef ArModelLoadProgressCallback = void Function(double progress);
 
 class _LoadedModel {
   const _LoadedModel({
@@ -44,6 +45,7 @@ class ArController {
   ArSessionStateCallback? onSessionStateChanged;
   ArErrorCallback? onError;
   ArNodeTappedCallback? onNodeTapped;
+  ArModelLoadProgressCallback? onModelLoadProgress;
 
   StreamSubscription? _eventSubscription;
 
@@ -380,6 +382,18 @@ class ArController {
     }
   }
 
+  /// Open device settings to grant camera permission.
+  ///
+  /// Useful when permission was denied and user needs to enable it manually.
+  Future<void> openAppSettings() async {
+    _ensureNotDisposed();
+    try {
+      await _channel.invokeMethod('openAppSettings');
+    } on PlatformException catch (e) {
+      throw ArPermissionException(e.message ?? 'Failed to open app settings');
+    }
+  }
+
   // ─── Event Handling ────────────────────────────────────────
 
   void _setupEventListener() {
@@ -416,6 +430,12 @@ class ArController {
         _updateState(
           tracking ? ArSessionState.tracking : ArSessionState.trackingLost,
         );
+        break;
+      case 'modelLoadProgress':
+        final progress = event['progress'] as num?;
+        if (progress != null) {
+          onModelLoadProgress?.call(progress.toDouble());
+        }
         break;
     }
   }
@@ -469,5 +489,16 @@ class ArController {
   Map<String, dynamic> _sourceToMap(ArSource source, bool cacheRemoteModel) {
     return Map<String, dynamic>.from(source.toMap())
       ..['cacheRemoteModel'] = cacheRemoteModel;
+  }
+
+  /// Cancel any ongoing model download.
+  Future<void> cancelModelLoad() async {
+    _ensureNotDisposed();
+    try {
+      await _channel.invokeMethod('cancelModelLoad');
+      _loadedModel = null;
+    } on PlatformException catch (e) {
+      throw ArModelException(e.message ?? 'Failed to cancel download');
+    }
   }
 }

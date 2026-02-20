@@ -554,6 +554,7 @@ class _ModelViewerDemoState extends State<ModelViewerDemo> {
   bool _modelLoaded = false;
   int _nodeCount = 0;
   String _status = 'Initializing AR...';
+  double _downloadProgress = 0.0;
 
   void _onArCreated(ArController controller) {
     _controller = controller;
@@ -569,6 +570,17 @@ class _ModelViewerDemoState extends State<ModelViewerDemo> {
         };
       });
     };
+
+    controller.onModelLoadProgress = (progress) {
+      if (!mounted) return;
+      setState(() {
+        _downloadProgress = progress;
+        if (progress < 1.0) {
+          _status = 'Downloading: ${(progress * 100).toInt()}%';
+        }
+      });
+    };
+
     _loadModel();
   }
 
@@ -644,6 +656,17 @@ class _ModelViewerDemoState extends State<ModelViewerDemo> {
               children: [
                 Text(_status, style: const TextStyle(color: Colors.white)),
                 const SizedBox(height: 6),
+                if (_downloadProgress > 0 && _downloadProgress < 1.0) ...[
+                  LinearProgressIndicator(
+                    value: _downloadProgress,
+                    backgroundColor: Colors.white24,
+                    valueColor: const AlwaysStoppedAnimation<Color>(
+                      Colors.cyanAccent,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                ],
+
                 Text(
                   'Placed models: $_nodeCount',
                   style: const TextStyle(color: Colors.white70),

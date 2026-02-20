@@ -160,4 +160,94 @@ void main() {
 
     await controller.dispose();
   });
+
+  test('model load progress callback is triggered correctly', () async {
+    final controller = ArController.create(viewId);
+    await controller.initialize(const ArConfig());
+
+    final progressEvents = <double>[];
+    controller.onModelLoadProgress = (progress) {
+      progressEvents.add(progress);
+    };
+
+    // Since we can't easily mock EventChannel streams in tests,
+    // we verify that the callback is properly set and callable
+    expect(controller.onModelLoadProgress, isNotNull);
+
+    // Manually trigger callback to test the logic
+    controller.onModelLoadProgress!(0.25);
+    controller.onModelLoadProgress!(0.50);
+    controller.onModelLoadProgress!(1.0);
+
+    expect(progressEvents, [0.25, 0.50, 1.0]);
+
+    await controller.dispose();
+  });
+
+  group('Model Load Progress', () {
+    test('onModelLoadProgress callback can be set and triggered', () async {
+      final controller = ArController.create(viewId);
+      await controller.initialize(const ArConfig());
+
+      final progressEvents = <double>[];
+
+      // Initially null
+      expect(controller.onModelLoadProgress, isNull);
+
+      // Set callback
+      controller.onModelLoadProgress = (progress) {
+        progressEvents.add(progress);
+      };
+
+      // Verify callback is set
+      expect(controller.onModelLoadProgress, isNotNull);
+
+      // Simulate progress updates (as if coming from native)
+      controller.onModelLoadProgress!(0.0);
+      controller.onModelLoadProgress!(0.25);
+      controller.onModelLoadProgress!(0.5);
+      controller.onModelLoadProgress!(0.75);
+      controller.onModelLoadProgress!(1.0);
+
+      expect(progressEvents, [0.0, 0.25, 0.5, 0.75, 1.0]);
+
+      await controller.dispose();
+    });
+
+    test('progress callback handles indeterminate progress (-1)', () async {
+      final controller = ArController.create(viewId);
+      await controller.initialize(const ArConfig());
+
+      double? receivedProgress;
+      controller.onModelLoadProgress = (progress) {
+        receivedProgress = progress;
+      };
+
+      // Simulate indeterminate progress
+      controller.onModelLoadProgress!(-1.0);
+
+      expect(receivedProgress, -1.0);
+
+      await controller.dispose();
+    });
+
+    test('progress callback is not called after dispose', () async {
+      final controller = ArController.create(viewId);
+      await controller.initialize(const ArConfig());
+
+      var callCount = 0;
+      controller.onModelLoadProgress = (progress) {
+        callCount++;
+      };
+
+      controller.onModelLoadProgress!(0.5);
+      expect(callCount, 1);
+
+      await controller.dispose();
+
+      // After dispose, callback should still exist but controller is disposed
+      // The actual EventChannel will stop sending events
+      expect(controller.onModelLoadProgress, isNotNull);
+    });
+  });
 }

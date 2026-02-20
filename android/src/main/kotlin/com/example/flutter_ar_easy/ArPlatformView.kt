@@ -3,33 +3,21 @@ package com.example.flutter_ar_easy
 import android.Manifest
 import android.app.Activity
 import android.content.pm.PackageManager
-import android.os.Build
 import android.graphics.Bitmap
 import android.graphics.Color
-import android.graphics.PixelFormat
-import android.net.Uri
+import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
 import android.view.PixelCopy
 import android.view.View
 import android.widget.FrameLayout
-import com.google.ar.core.Config
-import com.google.ar.core.Frame
-import com.google.ar.core.HitResult
-import com.google.ar.core.Plane
-import com.google.ar.core.Session
-import com.google.ar.core.TrackingState
-import com.google.ar.core.ArCoreApk
-import com.google.ar.sceneform.AnchorNode
-import com.google.ar.sceneform.ArSceneView
-import com.google.ar.sceneform.Node
-import com.google.ar.sceneform.math.Quaternion
-import com.google.ar.sceneform.math.Vector3
-import com.google.ar.sceneform.rendering.MaterialFactory
-import com.google.ar.sceneform.rendering.ModelRenderable
-import com.google.ar.sceneform.rendering.ShapeFactory
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import com.google.ar.core.ArCoreApk
+import com.google.ar.core.Config
+import com.google.ar.core.HitResult
+import com.google.ar.core.Plane
+import com.google.ar.core.TrackingState
 import io.flutter.FlutterInjector
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.EventChannel
@@ -42,12 +30,22 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
-import java.io.ByteArrayOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
+
+// SceneView imports (replacing Sceneform)
+import io.github.sceneview.ar.ArSceneView
+import io.github.sceneview.ar.node.ArModelNode
+import io.github.sceneview.ar.node.ArNode
+import io.github.sceneview.ar.arcore.getUpdatedPlanes
+import io.github.sceneview.math.Position
+import io.github.sceneview.math.Rotation
+import io.github.sceneview.math.Scale
+import io.github.sceneview.node.ModelNode
 
 class ArPlatformView(
     private val activity: Activity,
@@ -55,19 +53,23 @@ class ArPlatformView(
     messenger: BinaryMessenger,
     private val creationParams: Map<*, *>
 ) : PlatformView, MethodChannel.MethodCallHandler {
-
+    private var currentDownloadJob: Job? = null
     private val frameLayout = FrameLayout(activity).apply {
         clipChildren = true
         clipToPadding = true
     }
+
+    // Replace old Sceneform ArSceneView with SceneView version
     private var arSceneView: ArSceneView? = null
+
     private val methodChannel: MethodChannel
     private val eventChannel: EventChannel
     private var eventSink: EventChannel.EventSink? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
-    private val nodes = mutableMapOf<String, Node>()
-    private val cachedRemoteUris = mutableMapOf<String, Uri>()
+    // Node tracking with SceneView types
+    private val nodes = mutableMapOf<String, ArNode>()
+    private val cachedRemoteUris = mutableMapOf<String, String>()
     private val modelCacheDirectory by lazy {
         File(activity.cacheDir, "flutter_ar_easy_models").apply { mkdirs() }
     }
@@ -115,6 +117,8 @@ class ArPlatformView(
             "removeAllNodes" -> removeAllNodes(result)
             "updateNode" -> updateNode(call, result)
             "takeSnapshot" -> takeSnapshot(result)
+            "openAppSettings" -> openAppSettings(result)
+            "cancelModelLoad" -> cancelModelLoad(result)
             "dispose" -> disposeAr(result)
             else -> result.notImplemented()
         }
@@ -221,60 +225,49 @@ class ArPlatformView(
     }
 
     private fun setupArSceneView() {
-        arSceneView?.pause()
-        arSceneView?.session?.close()
         arSceneView?.destroy()
         arSceneView = null
         frameLayout.removeAllViews()
 
-        arSceneView = ArSceneView(activity).apply {
+        arSceneView = ArSceneView(
+            activity,
+            lifecycle = activity.lifecycle
+        ).apply {
             layoutParams = FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT
             )
-            // Keep the AR surface behind Flutter overlays on devices where
-            // SurfaceView defaults can otherwise occlude the Dart UI.
-            setZOrderOnTop(false)
-            setZOrderMediaOverlay(false)
-            holder.setFormat(PixelFormat.OPAQUE)
         }
         frameLayout.addView(arSceneView)
 
         val sceneView = arSceneView ?: return
-        try {
-            val session = Session(activity)
-            val config = Config(session).apply {
-                updateMode = Config.UpdateMode.LATEST_CAMERA_IMAGE
-                focusMode = Config.FocusMode.AUTO
-                // Sceneform 1.17 is not compatible with ARCore HDR cubemap APIs on some versions.
-                lightEstimationMode = if (lightEstimationEnabled) {
-                    Config.LightEstimationMode.AMBIENT_INTENSITY
-                } else {
-                    Config.LightEstimationMode.DISABLED
-                }
-                planeFindingMode = when (planeDetectionMode) {
-                    0 -> Config.PlaneFindingMode.HORIZONTAL
-                    1 -> Config.PlaneFindingMode.VERTICAL
-                    2 -> Config.PlaneFindingMode.HORIZONTAL_AND_VERTICAL
-                    else -> Config.PlaneFindingMode.DISABLED
-                }
+
+        // Configure ARCore session
+        sceneView.configureSession { session, config ->
+            config.updateMode = Config.UpdateMode.LATEST_CAMERA_IMAGE
+            config.focusMode = Config.FocusMode.AUTO
+            config.lightEstimationMode = if (lightEstimationEnabled) {
+                Config.LightEstimationMode.AMBIENT_INTENSITY
+            } else {
+                Config.LightEstimationMode.DISABLED
             }
-            session.configure(config)
-            sceneView.setupSession(session)
-        } catch (e: Exception) {
-            throw IllegalStateException(
-                "Failed to start AR session: ${e.message ?: "unknown error"}",
-                e
-            )
+            config.planeFindingMode = when (planeDetectionMode) {
+                0 -> Config.PlaneFindingMode.HORIZONTAL
+                1 -> Config.PlaneFindingMode.VERTICAL
+                2 -> Config.PlaneFindingMode.HORIZONTAL_AND_VERTICAL
+                else -> Config.PlaneFindingMode.DISABLED
+            }
         }
 
-        sceneView.scene.addOnUpdateListener {
-            val frame = sceneView.arFrame ?: return@addOnUpdateListener
+        // Set up frame update listener for plane detection
+        sceneView.onFrame = { frameTime ->
+            val frame = sceneView.arSession?.currentFrame ?: return@onFrame
 
             val isTracking = frame.camera.trackingState == TrackingState.TRACKING
             sendEvent("trackingStateChanged", mapOf("isTracking" to isTracking))
 
-            for (plane in frame.getUpdatedTrackables(Plane::class.java)) {
+            // Detect planes
+            for (plane in frame.getUpdatedPlanes()) {
                 if (plane.trackingState != TrackingState.TRACKING) continue
                 val pose = plane.centerPose
                 sendEvent(
@@ -298,19 +291,17 @@ class ArPlatformView(
                 )
             }
 
-            arSceneView?.planeRenderer?.isEnabled = showDebugPlanes
+            // Toggle plane visualization
+            sceneView.planeRenderer.isVisible = showDebugPlanes
         }
 
-        sceneView.scene.setOnTouchListener { hitTestResult, _ ->
-            val tappedNode = hitTestResult.node ?: return@setOnTouchListener false
-            val nodeId = nodes.entries.firstOrNull { it.value == tappedNode }?.key
+        // Handle node taps
+        sceneView.onNodeTap = { node, _ ->
+            val nodeId = nodes.entries.firstOrNull { it.value == node }?.key
             if (nodeId != null) {
                 sendEvent("nodeTapped", mapOf("nodeId" to nodeId))
             }
-            false
         }
-
-        sceneView.resume()
     }
 
     private fun hasCameraPermission(): Boolean {
@@ -375,64 +366,55 @@ class ArPlatformView(
 
         val id = args["id"] as? String ?: "node_${System.currentTimeMillis()}"
         val objectType = asInt(args["objectType"], 0)
-        val position = mapToVector3(
-            args["position"] as? Map<*, *>,
-            default = Vector3(0f, 0f, -1f)
-        )
-        val scaleValue = asFloat((args["scale"] as? Map<*, *>)?.get("x"), 0.1f)
+        val positionMap = args["position"] as? Map<*, *>
+        val scaleMap = args["scale"] as? Map<*, *>
         val properties = args["properties"] as? Map<*, *>
         val colorHex = properties?.get("color") as? String ?: "#FF0000"
-        val color = try {
-            Color.parseColor(colorHex)
-        } catch (_: Exception) {
-            Color.RED
+
+        val position = Position(
+            x = asFloat((positionMap?.get("x")), 0f),
+            y = asFloat((positionMap?.get("y")), 0f),
+            z = asFloat((positionMap?.get("z")), -1f)
+        )
+
+        val scale = Scale(
+            x = asFloat((scaleMap?.get("x")), 0.1f),
+            y = asFloat((scaleMap?.get("y")), 0.1f),
+            z = asFloat((scaleMap?.get("z")), 0.1f)
+        )
+
+        val sceneView = arSceneView
+        if (sceneView == null) {
+            result.error("SCENE_ERROR", "AR scene is not available", null)
+            return
         }
 
-        MaterialFactory.makeOpaqueWithColor(
-            activity,
-            com.google.ar.sceneform.rendering.Color(color)
-        ).thenAccept { material ->
-            val renderable = when (objectType) {
-                0 -> ShapeFactory.makeCube(
-                    Vector3(scaleValue, scaleValue, scaleValue),
-                    Vector3.zero(),
-                    material
-                )
-                1 -> ShapeFactory.makeSphere(scaleValue / 2f, Vector3.zero(), material)
-                2 -> ShapeFactory.makeCylinder(
-                    scaleValue / 2f,
-                    scaleValue,
-                    Vector3.zero(),
-                    material
-                )
-                else -> ShapeFactory.makeCube(
-                    Vector3(scaleValue, scaleValue, scaleValue),
-                    Vector3.zero(),
-                    material
-                )
+        // Create primitive node
+        val node = ArNode().apply {
+            this.position = position
+            this.scale = scale
+
+            // Load appropriate shape (SceneView uses GLB models for primitives)
+            // You'll need to bundle basic shape GLBs in assets
+            val shapePath = when (objectType) {
+                0 -> "models/cube.glb"  // You need to add these
+                1 -> "models/sphere.glb"
+                2 -> "models/cylinder.glb"
+                else -> "models/cube.glb"
             }
 
-            val node = placeRenderableNode(
-                id = id,
-                renderable = renderable,
-                scale = 1f,
-                fallbackPosition = position,
-                screenX = null,
-                screenY = null
+            loadModel(
+                context = activity,
+                lifecycle = activity.lifecycle,
+                glbFileLocation = shapePath,
+                autoAnimate = false,
+                scaleToUnits = 1f
             )
-            if (node == null) {
-                result.error("PLACE_ERROR", "AR scene is not available", null)
-                return@thenAccept
-            }
-            result.success(null)
-        }.exceptionally { throwable ->
-            result.error(
-                "RENDER_ERROR",
-                "Failed to create renderable: ${throwable.message}",
-                null
-            )
-            null
         }
+
+        sceneView.addChild(node)
+        nodes[id] = node
+        result.success(null)
     }
 
     private fun placeModel(call: MethodCall, result: MethodChannel.Result) {
@@ -778,36 +760,44 @@ class ArPlatformView(
 
     private fun placeRenderableNode(
         id: String,
-        renderable: ModelRenderable,
+        modelPath: String,
         scale: Float,
-        fallbackPosition: Vector3,
+        fallbackPosition: Position,
         screenX: Float?,
         screenY: Float?
-    ): Node? {
+    ): ArNode? {
         val sceneView = arSceneView ?: return null
-        val hitResult = resolveHitResult(sceneView, screenX, screenY)
 
-        val node = if (hitResult != null) {
-            val anchorNode = AnchorNode(hitResult.createAnchor()).apply {
-                setParent(sceneView.scene)
-            }
+        // Create model node
+        val modelNode = ArModelNode(
+            placementMode = ArModelNode.PlacementMode.INSTANT
+        ).apply {
+            loadModel(
+                context = activity,
+                lifecycle = activity.lifecycle,
+                glbFileLocation = modelPath,
+                autoAnimate = false,
+                scaleToUnits = scale,
+                centerOrigin = Position(0f, 0f, 0f)
+            )
+        }
 
-            Node().apply {
-                this.renderable = renderable
-                localScale = Vector3(scale, scale, scale)
-                setParent(anchorNode)
-            }
-        } else {
-            Node().apply {
-                this.renderable = renderable
-                localPosition = fallbackPosition
-                localScale = Vector3(scale, scale, scale)
-                setParent(sceneView.scene)
+        // Try hit test placement if screen coordinates provided
+        if (screenX != null && screenY != null) {
+            val hitResult = sceneView.hitTest(screenX, screenY)
+            if (hitResult != null) {
+                modelNode.anchor = hitResult.createAnchor()
+                sceneView.addChild(modelNode)
+                nodes[id] = modelNode
+                return modelNode
             }
         }
 
-        nodes[id] = node
-        return node
+        // Fallback: place in front of camera
+        modelNode.position = fallbackPosition
+        sceneView.addChild(modelNode)
+        nodes[id] = modelNode
+        return modelNode
     }
 
     private fun resolveHitResult(
@@ -900,14 +890,50 @@ class ArPlatformView(
                 error("Failed to download model (HTTP ${connection.responseCode})")
             }
 
+            // Get total file size for progress calculation
+            val contentLength = connection.contentLength.toLong()
+            var downloadedBytes = 0L
+
             connection.inputStream.use { input ->
                 FileOutputStream(output).use { fileOutput ->
-                    input.copyTo(fileOutput)
+                    val buffer = ByteArray(8192)
+                    var bytesRead: Int
+
+                    while (input.read(buffer).also { bytesRead = it } != -1) {
+                        fileOutput.write(buffer, 0, bytesRead)
+                        downloadedBytes += bytesRead
+
+                        // Send progress update (every 100KB to avoid flooding)
+                        if (downloadedBytes % 102400 == 0L || downloadedBytes == contentLength) {
+                            val progress = if (contentLength > 0) {
+                                (downloadedBytes.toDouble() / contentLength.toDouble())
+                            } else {
+                                -1.0 // Indeterminate
+                            }
+
+                            activity.runOnUiThread {
+                                sendProgressEvent(progress)
+                            }
+                        }
+                    }
+
+                    // Ensure 100% is sent at the end
+                    activity.runOnUiThread {
+                        sendProgressEvent(1.0)
+                    }
                 }
             }
-        } finally {
+        } catch (e: CancellationException) {
+            output.delete() // Clean up partial file
+            throw e
+        }finally {
             connection?.disconnect()
         }
+    }
+
+    private fun cancelModelLoad(result: MethodChannel.Result) {
+        currentDownloadJob?.cancel()
+        result.success(null)
     }
 
     private fun inferModelExtension(url: String): String {
@@ -1004,11 +1030,15 @@ class ArPlatformView(
         }
     }
 
+    private fun sendProgressEvent(progress: Double) {
+        sendEvent("modelLoadProgress", mapOf("progress" to progress))
+    }
+
     private fun cleanup() {
-        nodes.values.forEach { detachNode(it) }
+        nodes.values.forEach { node ->
+            arSceneView?.removeChild(node)
+        }
         nodes.clear()
-        arSceneView?.pause()
-        arSceneView?.session?.close()
         arSceneView?.destroy()
         arSceneView = null
         frameLayout.removeAllViews()
@@ -1019,5 +1049,19 @@ class ArPlatformView(
         cleanup()
         scope.cancel()
         methodChannel.setMethodCallHandler(null)
+    }
+
+    private fun openAppSettings(result: MethodChannel.Result) {
+        try {
+            val intent = android.content.Intent(
+                android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                android.net.Uri.fromParts("package", activity.packageName, null)
+            )
+            intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            activity.startActivity(intent)
+            result.success(null)
+        } catch (e: Exception) {
+            result.error("SETTINGS_ERROR", e.message, null)
+        }
     }
 }

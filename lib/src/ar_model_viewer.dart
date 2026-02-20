@@ -86,6 +86,7 @@ class _ArModelViewerState extends State<ArModelViewer> {
   double? _baseGestureScale;
   double? _baseGestureYaw;
   String? _statusMessage;
+  double _downloadProgress = 0.0;
 
   ArSource get _source {
     switch (widget.sourceType) {
@@ -108,6 +109,16 @@ class _ArModelViewerState extends State<ArModelViewer> {
         _statusMessage = widget.enableTapToPlace
             ? 'Plane detected! Tap to place model.'
             : 'Plane detected. Placing model...';
+      });
+    };
+
+    controller.onModelLoadProgress = (progress) {
+      if (!mounted) return;
+      setState(() {
+        _downloadProgress = progress;
+        if (progress < 1.0) {
+          _statusMessage = 'Downloading model... ${(progress * 100).toInt()}%';
+        }
       });
     };
 
@@ -327,9 +338,46 @@ class _ArModelViewerState extends State<ArModelViewer> {
                   color: Colors.black.withValues(alpha: 0.7),
                   borderRadius: BorderRadius.circular(24),
                 ),
-                child: Text(
-                  _statusMessage!,
-                  style: const TextStyle(color: Colors.white, fontSize: 14),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      _statusMessage!,
+                      style: const TextStyle(color: Colors.white, fontSize: 14),
+                    ),
+                    if (_downloadProgress > 0 && _downloadProgress < 1.0) ...[
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        width: 200,
+                        child: LinearProgressIndicator(
+                          value: _downloadProgress == -1.0
+                              ? null
+                              : _downloadProgress,
+                          backgroundColor: Colors.white24,
+                          valueColor: const AlwaysStoppedAnimation<Color>(
+                            Colors.cyanAccent,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      TextButton.icon(
+                        onPressed: () async {
+                          await _controller?.cancelModelLoad();
+                          if (!mounted) return;
+                          setState(() {
+                            _downloadProgress = 0.0;
+                            _isPreparingModel = false;
+                            _statusMessage = 'Download cancelled';
+                          });
+                        },
+                        icon: const Icon(Icons.cancel, color: Colors.white70),
+                        label: const Text(
+                          'Cancel',
+                          style: TextStyle(color: Colors.white70),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
             ),
@@ -378,6 +426,58 @@ class _ArModelViewerState extends State<ArModelViewer> {
                   },
                 ),
               ],
+            ),
+          ),
+
+        // Status overlay
+        if (_statusMessage != null)
+          Positioned(
+            bottom: 100,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 12,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.7),
+                  borderRadius: BorderRadius.circular(24),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      _statusMessage!,
+                      style: const TextStyle(color: Colors.white, fontSize: 14),
+                    ),
+                    // ADD PROGRESS BAR
+                    if (_downloadProgress > 0 && _downloadProgress < 1.0) ...[
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        width: 200,
+                        child: _downloadProgress == -1.0
+                            ? const LinearProgressIndicator(
+                                // Indeterminate
+                                backgroundColor: Colors.white24,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  Colors.cyanAccent,
+                                ),
+                              )
+                            : LinearProgressIndicator(
+                                // Determinate
+                                value: _downloadProgress,
+                                backgroundColor: Colors.white24,
+                                valueColor: const AlwaysStoppedAnimation<Color>(
+                                  Colors.cyanAccent,
+                                ),
+                              ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
             ),
           ),
       ],

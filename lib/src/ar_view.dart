@@ -106,6 +106,64 @@ class _ArViewState extends State<ArView> with WidgetsBindingObserver {
     }
   }
 
+  Widget _buildPermissionDeniedWidget() {
+    return Container(
+      color: Colors.grey[900],
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.camera_alt_outlined,
+                color: Colors.orangeAccent,
+                size: 64,
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Camera Permission Required',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'AR features need camera access to work.\n'
+                'Please grant permission in Settings.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.white60, fontSize: 14),
+              ),
+              const SizedBox(height: 24),
+              ElevatedButton.icon(
+                onPressed: () async {
+                  final controller = ArController.create(0); // Temp controller
+                  try {
+                    await controller.openAppSettings();
+                  } catch (e) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(
+                        context,
+                      ).showSnackBar(SnackBar(content: Text('Error: $e')));
+                    }
+                  }
+                },
+                icon: const Icon(Icons.settings),
+                label: const Text('Open Settings'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.orangeAccent,
+                  foregroundColor: Colors.black,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   void _onPlatformViewCreated(int viewId) async {
     final controller = ArController.create(viewId);
 
@@ -141,6 +199,10 @@ class _ArViewState extends State<ArView> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     if (!_isSupported) {
       return widget.unsupportedWidget ?? _buildUnsupportedWidget();
+    }
+
+    if (_errorMessage?.contains('PERMISSION') == true) {
+      return _buildPermissionDeniedWidget();
     }
 
     if (_errorMessage != null) {

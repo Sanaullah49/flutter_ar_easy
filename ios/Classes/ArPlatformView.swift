@@ -50,7 +50,7 @@ final class ArPlatformView: NSObject, FlutterPlatformView {
   private var nodes: [String: SCNNode] = [:]
   private var cachedRemoteFiles: [String: URL] = [:]
   private var activeConfig: ARWorldTrackingConfiguration?
-
+private var currentDownloadTask: URLSessionDownloadTask?
   private let supportedModelExtensions: Set<String> = ["usdz", "scn", "dae", "obj", "glb", "gltf"]
 
   init(
@@ -135,6 +135,10 @@ final class ArPlatformView: NSObject, FlutterPlatformView {
       updateNode(call: call, result: result)
     case "takeSnapshot":
       takeSnapshot(result: result)
+    case "openAppSettings":
+      openAppSettings(result: result)
+    case "cancelModelLoad":
+      cancelModelLoad(result: result)
     case "dispose":
       dispose(result: result)
     default:
@@ -595,6 +599,43 @@ final class ArPlatformView: NSObject, FlutterPlatformView {
     result(nil)
   }
 
+private func openAppSettings(result: @escaping FlutterResult) {
+  guard let settingsUrl = URL(string: UIApplication.openSettingsURLString) else {
+    result(
+      FlutterError(
+        code: "SETTINGS_ERROR",
+        message: "Could not open settings",
+        details: nil
+      )
+    )
+    return
+  }
+
+  if UIApplication.shared.canOpenURL(settingsUrl) {
+    UIApplication.shared.open(settingsUrl) { success in
+      if success {
+        result(nil)
+      } else {
+        result(
+          FlutterError(
+            code: "SETTINGS_ERROR",
+            message: "Failed to open settings",
+            details: nil
+          )
+        )
+      }
+    }
+  } else {
+    result(
+      FlutterError(
+        code: "SETTINGS_ERROR",
+        message: "Cannot open settings URL",
+        details: nil
+      )
+    )
+  }
+}
+
   private func cleanup() {
     for (_, node) in nodes {
       node.removeFromParentNode()
@@ -898,7 +939,8 @@ final class ArPlatformView: NSObject, FlutterPlatformView {
     to destinationURL: URL,
     completion: @escaping (Result<URL, Error>) -> Void
   ) {
-    URLSession.shared.downloadTask(with: remoteURL) { tempURL, _, error in
+    // Create download task with progress tracking
+    let task = URLSession.shared.downloadTask(with: remoteURL) { tempURL, response, error in
       if let error {
         completion(.failure(ArPlatformViewError.downloadFailed(error.localizedDescription)))
         return
@@ -920,12 +962,36 @@ final class ArPlatformView: NSObject, FlutterPlatformView {
         }
 
         try FileManager.default.moveItem(at: tempURL, to: destinationURL)
+
+        // Send 100% completion
+        DispatchQueue.main.async {
+          self.sendProgressEvent(progress: 1.0)
+        }
+
         completion(.success(destinationURL))
       } catch {
         completion(.failure(ArPlatformViewError.downloadFailed(error.localizedDescription)))
       }
-    }.resume()
+    }
+
+    // Observe download progress
+    let observation = task.progress.observe(\.fractionCompleted) { progress, _ in
+      DispatchQueue.main.async {
+        self.sendProgressEvent(progress: progress.fractionCompleted)
+      }
+    }
+currentDownloadTask = task
+    task.resume()
+
+    // Keep observation alive (you may want to store this to cancel later)
+    // For simplicity, we're letting it live for the duration of the download
   }
+
+private func cancelModelLoad(result: @escaping FlutterResult) {
+  currentDownloadTask?.cancel()
+  currentDownloadTask = nil
+  result(nil)
+}
 
   private func cachedFileURL(for remoteURL: URL) -> URL {
     let ext = safeModelExtension(from: remoteURL)
@@ -1015,6 +1081,10 @@ final class ArPlatformView: NSObject, FlutterPlatformView {
       }
       sink(payload)
     }
+  }
+
+  private func sendProgressEvent(progress: Double) {
+    sendEvent(type: "modelLoadProgress", data: ["progress": progress])
   }
 
   private func flutterError(code: String, error: Error) -> FlutterError {
