@@ -51,7 +51,7 @@ final class ArPlatformView: NSObject, FlutterPlatformView {
   private var cachedRemoteFiles: [String: URL] = [:]
   private var activeConfig: ARWorldTrackingConfiguration?
 
-  private let supportedModelExtensions: Set<String> = ["usdz", "scn", "dae", "obj"]
+  private let supportedModelExtensions: Set<String> = ["usdz", "scn", "dae", "obj", "glb", "gltf"]
 
   init(
     frame: CGRect,
@@ -668,6 +668,32 @@ final class ArPlatformView: NSObject, FlutterPlatformView {
       throw ArPlatformViewError.unsupportedModelFormat(ext)
     }
 
+    // Handle GLB/GLTF by attempting to load as SCN-compatible DAE first
+    if ext == "glb" || ext == "gltf" {
+      // Try loading via SCNScene (some GLB files work if they're simple)
+      do {
+        let scene = try SCNScene(url: url, options: [
+          .checkConsistency: true,
+          .flattenScene: false,
+        ])
+        let container = SCNNode()
+        for child in scene.rootNode.childNodes {
+          container.addChildNode(child.clone())
+        }
+
+        guard !container.childNodes.isEmpty else {
+          throw ArPlatformViewError.modelHasNoContent
+        }
+        return container
+      } catch {
+        // If loading fails, throw informative error
+        throw ArPlatformViewError.unsupportedModelFormat(
+          "\(ext) - SceneKit cannot load this GLB file. Convert to USDZ for iOS. Error: \(error.localizedDescription)"
+        )
+      }
+    }
+
+    // Standard loading for USDZ/SCN/DAE/OBJ
     let scene = try SCNScene(url: url, options: nil)
     let container = SCNNode()
 
@@ -794,18 +820,34 @@ final class ArPlatformView: NSObject, FlutterPlatformView {
       }
 
       if cacheRemote {
-        if let cached = cachedRemoteFiles[path], FileManager.default.fileExists(atPath: cached.path) {
-          completion(.success(cached))
-          return
+        // Check in-memory cache first
+        if let cached = cachedRemoteFiles[path] {
+          do {
+            let attrs = try FileManager.default.attributesOfItem(atPath: cached.path)
+            if let size = attrs[.size] as? UInt64, size > 0 {
+              completion(.success(cached))
+              return
+            }
+          } catch {
+            // File invalid - remove from memory cache
+            cachedRemoteFiles.removeValue(forKey: path)
+          }
         }
 
+        // Check on-disk cache
         let cacheFile = cachedFileURL(for: remoteURL)
-        if FileManager.default.fileExists(atPath: cacheFile.path) {
-          cachedRemoteFiles[path] = cacheFile
-          completion(.success(cacheFile))
-          return
+        do {
+          let attrs = try FileManager.default.attributesOfItem(atPath: cacheFile.path)
+          if let size = attrs[.size] as? UInt64, size > 0 {
+            cachedRemoteFiles[path] = cacheFile
+            completion(.success(cacheFile))
+            return
+          }
+        } catch {
+          // Not cached on disk - need to download
         }
 
+        // Download and cache
         downloadRemoteModel(from: remoteURL, to: cacheFile) { downloadResult in
           switch downloadResult {
           case .success(let url):
@@ -816,6 +858,7 @@ final class ArPlatformView: NSObject, FlutterPlatformView {
           }
         }
       } else {
+        // No caching - download to temp
         let tempFile = temporaryFileURL(for: remoteURL)
         downloadRemoteModel(from: remoteURL, to: tempFile, completion: completion)
       }
@@ -1070,10 +1113,25 @@ final class ArPlatformView: NSObject, FlutterPlatformView {
     }
 
     let hasAlpha = cleaned.count == 8
-    let alpha: CGFloat = hasAlpha ? CGFloat((value & 0xFF000000) >> 24) / 255 : 1
-    let red: CGFloat = CGFloat((value & 0x00FF0000) >> 16) / 255
-    let green: CGFloat = CGFloat((value & 0x0000FF00) >> 8) / 255
-    let blue: CGFloat = CGFloat(value & 0x000000FF) / 255
+    let alpha: CGFloat
+    let red: CGFloat
+    let green: CGFloat
+    let blue: CGFloat
+
+    if hasAlpha {
+      // Format: AARRGGBB
+      alpha = CGFloat((value & 0xFF000000) >> 24) / 255
+      red = CGFloat((value & 0x00FF0000) >> 16) / 255
+      green = CGFloat((value & 0x0000FF00) >> 8) / 255
+      blue = CGFloat(value & 0x000000FF) / 255
+    } else {
+      // Format: RRGGBB
+      alpha = 1.0
+      red = CGFloat((value & 0xFF0000) >> 16) / 255
+      green = CGFloat((value & 0x00FF00) >> 8) / 255
+      blue = CGFloat(value & 0x0000FF) / 255
+    }
+
     return UIColor(red: red, green: green, blue: blue, alpha: alpha)
   }
 }

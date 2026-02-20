@@ -3,8 +3,10 @@ package com.example.flutter_ar_easy
 import android.Manifest
 import android.app.Activity
 import android.content.pm.PackageManager
+import android.os.Build
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.graphics.PixelFormat
 import android.net.Uri
 import android.os.Handler
 import android.os.HandlerThread
@@ -54,7 +56,10 @@ class ArPlatformView(
     private val creationParams: Map<*, *>
 ) : PlatformView, MethodChannel.MethodCallHandler {
 
-    private val frameLayout = FrameLayout(activity)
+    private val frameLayout = FrameLayout(activity).apply {
+        clipChildren = true
+        clipToPadding = true
+    }
     private var arSceneView: ArSceneView? = null
     private val methodChannel: MethodChannel
     private val eventChannel: EventChannel
@@ -69,6 +74,7 @@ class ArPlatformView(
 
     private var showDebugPlanes = false
     private var planeDetectionMode = 0
+    private var lightEstimationEnabled = true
     private var isInitialized = false
     private var arCoreInstallRequested = false
 
@@ -132,24 +138,77 @@ class ArPlatformView(
                 return
             }
 
-            val installStatus = ArCoreApk.getInstance().requestInstall(
-                activity,
-                !arCoreInstallRequested
-            )
-            if (installStatus == ArCoreApk.InstallStatus.INSTALL_REQUESTED) {
-                arCoreInstallRequested = true
-                result.error(
-                    "ARCORE_INSTALL_REQUIRED",
-                    "Google Play Services for AR is required. Complete installation and reopen AR.",
-                    null
-                )
-                sendEvent("sessionStateChanged", mapOf("state" to 5))
-                return
+            val availability = ArCoreApk.getInstance().checkAvailability(activity)
+            when {
+                availability == ArCoreApk.Availability.SUPPORTED_INSTALLED -> {
+                    // Nothing else to do.
+                }
+                availability == ArCoreApk.Availability.SUPPORTED_NOT_INSTALLED ||
+                    availability == ArCoreApk.Availability.SUPPORTED_APK_TOO_OLD -> {
+                    if (!isPackageInstalled("com.android.vending")) {
+                        result.error(
+                            "ARCORE_INSTALL_UNAVAILABLE",
+                            "Google Play Services for AR is missing and this device has no Play Store. " +
+                                "Use a real ARCore-supported phone, or an emulator image with Google Play.",
+                            null
+                        )
+                        sendEvent("sessionStateChanged", mapOf("state" to 5))
+                        return
+                    }
+
+                    // ARCore SDK 1.15 install UI can crash on targetSdk 34+.
+                    if (activity.applicationInfo.targetSdkVersion >=
+                        Build.VERSION_CODES.UPSIDE_DOWN_CAKE
+                    ) {
+                        result.error(
+                            "ARCORE_INSTALL_REQUIRED",
+                            "Google Play Services for AR is required. " +
+                                "Please install/update it from Play Store, then reopen AR.",
+                            null
+                        )
+                        sendEvent("sessionStateChanged", mapOf("state" to 5))
+                        return
+                    }
+
+                    val installStatus = ArCoreApk.getInstance().requestInstall(
+                        activity,
+                        !arCoreInstallRequested
+                    )
+                    if (installStatus == ArCoreApk.InstallStatus.INSTALL_REQUESTED) {
+                        arCoreInstallRequested = true
+                        result.error(
+                            "ARCORE_INSTALL_REQUIRED",
+                            "Google Play Services for AR is required. Complete installation and reopen AR.",
+                            null
+                        )
+                        sendEvent("sessionStateChanged", mapOf("state" to 5))
+                        return
+                    }
+                }
+                availability.isTransient -> {
+                    result.error(
+                        "ARCORE_CHECKING",
+                        "ARCore availability check is still in progress. Please try again.",
+                        null
+                    )
+                    sendEvent("sessionStateChanged", mapOf("state" to 5))
+                    return
+                }
+                else -> {
+                    result.error(
+                        "ARCORE_UNSUPPORTED",
+                        "This device does not support ARCore.",
+                        null
+                    )
+                    sendEvent("sessionStateChanged", mapOf("state" to 5))
+                    return
+                }
             }
 
             val args = call.arguments as? Map<*, *> ?: emptyMap<String, Any>()
             showDebugPlanes = args["showDebugPlanes"] as? Boolean ?: false
             planeDetectionMode = asInt(args["planeDetection"], 0)
+            lightEstimationEnabled = args["lightEstimation"] as? Boolean ?: true
 
             setupArSceneView()
             isInitialized = true
@@ -173,6 +232,11 @@ class ArPlatformView(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT
             )
+            // Keep the AR surface behind Flutter overlays on devices where
+            // SurfaceView defaults can otherwise occlude the Dart UI.
+            setZOrderOnTop(false)
+            setZOrderMediaOverlay(false)
+            holder.setFormat(PixelFormat.OPAQUE)
         }
         frameLayout.addView(arSceneView)
 
@@ -182,7 +246,12 @@ class ArPlatformView(
             val config = Config(session).apply {
                 updateMode = Config.UpdateMode.LATEST_CAMERA_IMAGE
                 focusMode = Config.FocusMode.AUTO
-                lightEstimationMode = Config.LightEstimationMode.ENVIRONMENTAL_HDR
+                // Sceneform 1.17 is not compatible with ARCore HDR cubemap APIs on some versions.
+                lightEstimationMode = if (lightEstimationEnabled) {
+                    Config.LightEstimationMode.AMBIENT_INTENSITY
+                } else {
+                    Config.LightEstimationMode.DISABLED
+                }
                 planeFindingMode = when (planeDetectionMode) {
                     0 -> Config.PlaneFindingMode.HORIZONTAL
                     1 -> Config.PlaneFindingMode.VERTICAL
@@ -249,6 +318,24 @@ class ArPlatformView(
             activity,
             Manifest.permission.CAMERA
         ) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun isPackageInstalled(packageName: String): Boolean {
+        val packageManager = activity.packageManager
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                packageManager.getPackageInfo(
+                    packageName,
+                    PackageManager.PackageInfoFlags.of(0)
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                packageManager.getPackageInfo(packageName, 0)
+            }
+            true
+        } catch (_: PackageManager.NameNotFoundException) {
+            false
+        }
     }
 
     private fun prepareModel(call: MethodCall, result: MethodChannel.Result) {

@@ -30,6 +30,44 @@ Add to your `pubspec.yaml`:
 ```yaml
 dependencies:
   flutter_ar_easy: ^0.1.0
+  
+  
+  ## 📱 Platform Support
+
+| Platform | Minimum Version | Model Formats      | Status |
+|----------|----------------|--------------------|--------|
+| Android  | API 24 (7.0)   | GLB, GLTF, OBJ     | ✅ Stable |
+| iOS      | iOS 12.0       | USDZ, SCN, DAE, OBJ | ✅ Stable |
+
+### Model Format Notes
+- **Android**: Best performance with GLB/GLTF files
+- **iOS**: USDZ recommended (native format). GLB support is experimental
+- **Cross-platform**: Host separate USDZ (iOS) and GLB (Android) files, or convert GLB→USDZ using [Reality Converter](https://developer.apple.com/augmented-reality/tools/)
+
+## ⚠️ Known Limitations (v0.1.0)
+
+- **Android ARCore Installation**: On Android 14+ (targetSdk 34+), users must manually install/update "Google Play Services for AR" from Play Store before opening AR
+- **iOS GLB Support**: Complex GLB files may fail to load. Use USDZ for guaranteed compatibility
+- **Model Size**: Files >50MB may cause performance issues on low-end devices
+- **Permissions**: Camera permission must be granted before calling `ArView`
+
+## 🔧 Troubleshooting
+
+### Android: "ARCore install required"
+**Solution:** Install "Google Play Services for AR" from Play Store, then restart your app.
+
+### iOS: "Model format not supported"
+**Solution:** Convert your GLB model to USDZ using Apple's [Reality Converter](https://developer.apple.com/augmented-reality/tools/).
+
+### Black screen on AR view
+**Solution:** Ensure camera permission is granted. Check `AndroidManifest.xml` and `Info.plist` setup.
+
+### Models not appearing
+**Solution:** 
+1. Point device at a well-lit, textured surface (not a blank wall)
+2. Move device slowly to detect planes
+3. Check `showDebugPlanes: true` to visualize detected surfaces
+
 Android Setup
 Minimum SDK: Set minSdkVersion to 24 in android/app/build.gradle:
 gradle

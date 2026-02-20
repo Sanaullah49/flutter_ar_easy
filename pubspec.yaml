@@ -2,6 +2,15 @@ name: flutter_ar_easy
 description: "A simplified AR integration wrapper for Flutter. Place 3D models in AR with 5 lines of code."
 version: 0.1.0
 homepage: https://github.com/Sanaullah49/flutter_ar_easy
+repository: https://github.com/Sanaullah49/flutter_ar_easy
+issue_tracker: https://github.com/Sanaullah49/flutter_ar_easy/issues
+
+topics:
+  - ar
+  - arcore
+  - arkit
+  - augmented-reality
+  - 3d
 
 environment:
   sdk: ^3.11.0

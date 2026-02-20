@@ -86,10 +86,11 @@ android {
 dependencies {
     testImplementation("org.jetbrains.kotlin:kotlin-test")
     testImplementation("org.mockito:mockito-core:5.0.0")
-    implementation("com.google.ar:core:1.40.0")
+    // Sceneform 1.17.1 is binary-compatible with ARCore 1.15.x APIs.
+    implementation("com.google.ar:core:1.15.0")
     implementation("com.google.ar.sceneform:sceneform-base:1.17.1")
     implementation("com.google.ar.sceneform.ux:sceneform-ux:1.17.1")
     implementation("com.google.ar.sceneform:assets:1.17.1")
-    implementation("androidx.lifecycle:lifecycle-common:2.6.2")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+    implementation("androidx.lifecycle:lifecycle-common:2.10.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
 }

@@ -262,7 +262,12 @@ class _ArModelViewerState extends State<ArModelViewer> {
     _isTransformSyncInFlight = true;
     controller
         .updateNode(node)
-        .catchError((error) => widget.onError?.call(error.toString()))
+        .catchError((error) {
+          // Fix: Reset flag on error to prevent permanent blocking
+          _isTransformSyncInFlight = false;
+          _hasPendingTransformSync = false;
+          widget.onError?.call(error.toString());
+        })
         .whenComplete(() {
           _isTransformSyncInFlight = false;
           if (_hasPendingTransformSync) {

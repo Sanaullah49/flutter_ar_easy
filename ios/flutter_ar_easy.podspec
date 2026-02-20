@@ -7,11 +7,12 @@ Pod::Spec.new do |s|
   s.version          = '0.0.1'
   s.summary          = 'A new Flutter plugin project.'
   s.description      = <<-DESC
-A new Flutter plugin project.
+A simplified AR integration wrapper for Flutter that makes AR usable in 5-10 lines of code.
+Wraps ARCore (Android) and ARKit (iOS) with a unified Dart API.
                        DESC
-  s.homepage         = 'http://example.com'
+  s.homepage         = 'https://github.com/Sanaullah49/flutter_ar_easy'
   s.license          = { :file => '../LICENSE' }
-  s.author           = { 'Your Company' => 'email@example.com' }
+  s.author           = { 'Sanaullah' => 'connectsanaullah@gmail.com' }
   s.source           = { :path => '.' }
   s.source_files = 'Classes/**/*'
   s.dependency 'Flutter'

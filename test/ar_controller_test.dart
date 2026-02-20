@@ -127,6 +127,9 @@ void main() {
 
     expect(node.id, 'node_screen');
     expect(node.objectType, ArObjectType.model);
+
+    // Fix: Add null safety
+    expect(node.source, isNotNull);
     expect(node.source?.path, 'https://example.com/chair.glb');
 
     final screenPlaceCall = recordedCalls.firstWhere(
@@ -135,6 +138,11 @@ void main() {
     final args = screenPlaceCall.arguments as Map<dynamic, dynamic>;
     expect(args['screenX'], 100.0);
     expect(args['screenY'], 200.0);
+
+    // Fix: Add null check for source
+    final sourceArg = args['source'] as Map<dynamic, dynamic>?;
+    expect(sourceArg, isNotNull);
+    expect(sourceArg!['path'], 'https://example.com/chair.glb');
 
     await controller.dispose();
   });
